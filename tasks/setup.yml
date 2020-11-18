@@ -1,0 +1,48 @@
+---
+# main task file
+
+- name: ensure download folder
+  file:
+    path: "{{ item }}"
+    state: directory
+  with_items:
+  - "{{ jail_template_download }}"
+  - "{{ jail_template_download }}/{{ jail_release }}"
+
+- name: ensure release downloaded
+  get_url:
+    url: "{{ freebsd_downloadsite }}/{{ jail_release }}/{{ item.file }}"
+    dest: "{{ jail_template_download }}/{{ jail_release }}/{{ item.file }}"
+  with_items: "{{ jail_default_install }}"
+
+- name: setup dataset
+  include_role:
+    name: coffeesprout.zfs
+    tasks_from: dataset
+  vars:
+    zfs_dataset:
+      name: "{{ jail_dataset }}"
+      extra_zfs_properties:
+        mountpoint: "{{ jail_location }}"
+
+- name: ensure jail.conf contains global settings
+  blockinfile:
+    dest: /etc/jail.conf
+    create: yes
+    insertbefore: BOF
+    marker: "# {mark} Global settings applied to all jails."
+    content: |
+        {% for opt in jail_default_opts %}
+        {{ opt.name }}{% if opt.option is defined %} = "{{ opt.option }}"{% endif %};
+        {% endfor %}
+
+- name: enable jails in rc.conf
+  sysrc: 
+    name: "jail_enable"
+    value: "YES"
+
+- name: enable parallel jail start in rc.conf
+  sysrc:
+    name: "jail_parallel_start"
+    value: "YES"
+  when: jail_parallel_start

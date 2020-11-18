@@ -1,0 +1,11 @@
+---
+# tasks file for coffeesprout.jail
+
+- include_tasks: setup.yml
+  tags:
+  - setup
+  - dataset
+
+- include_tasks: jail.yml
+  tags:
+  - jail

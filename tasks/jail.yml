@@ -1,0 +1,95 @@
+---
+
+# Setup a single jail; Can be run multiple times with different settings to create multiple
+
+- name: jail {{ jail_name }} ensure jail.conf contains jail stanza
+  blockinfile:
+    dest: /etc/jail.conf
+    create: yes
+    marker: "# {mark} Jail configuration {{ jail_name }}"
+    content: |
+      {{ jail_name }} {
+      {% if jail_ip != 'inherit' %}  host.hostname = {{ hostname }};{% endif %}
+      {% if jail_extra_opts is defined %}{% for opt in jail_extra_opts %}  {{ opt.name }}{% if opt.option is defined %} = {{ opt.option }}{% endif %};
+      {% endfor %}
+      {% endif %}
+      }
+
+- name: jail {{ jail_name }} ensure jail dataset
+  include_role:
+    name: coffeesprout.zfs
+    tasks_from: dataset
+  vars:
+    zfs_dataset:
+      parents: "{{ jail_dataset }}"
+      name: "{{ jail_name }}"
+      extra_zfs_properties: "{{ extra_zfs_properties }}"
+
+- name: jail {{ jail_name }} ensure base FreeBSD install
+  command: tar -xf "{{ jail_template_download }}/{{ jail_release }}/{{ item.file }}" -C "{{ jail_mountpoint }}"
+  args:
+    creates: "{{ jail_mountpoint }}/{{ item.creates }}"
+  with_items: " {{ jail_default_install }}"
+  register: freebsd_installed_in_jail
+
+- name: jail {{ jail_name }} ensure minimal configuration is in template
+  copy:
+    remote_src: yes
+    src: "/{{ item }}"
+    dest: "{{ jail_mountpoint }}/{{ item }}"
+    force: no
+  with_items: "{{ jail_minimal_conf }}"
+
+- name: jail {{ jail_name }} create optional zfs mounts
+  include_role:
+    name: coffeesprout.zfs
+    tasks_from: dataset
+  vars:
+    zfs_dataset:
+      name: "{{ item.name }}"
+      extra_zfs_properties: "{{ item.extra_zfs_properties }}"
+      parents: "{{ jail_dataset }}/{{ jail_name }}"
+  with_items: "{{ jail_zfs_mounts }}"
+
+- name: jail {{ jail_name }} optionally ensure jail receive further rc.conf changes
+  sysrc:
+    dest: "{{ jail_mountpoint }}/etc/rc.conf" 
+    name: "{{ item.name }}"
+    value: "{{ item.value }}"
+  with_items: "{{ jail_rc_defaults }}"
+
+- name: jail {{ jail_name }} ensure jail rc.conf hostname using sysrc
+  sysrc:
+    dest: "{{ jail_mountpoint }}/etc/rc.conf" 
+    name: "hostname"
+    value: "{{ hostname }}"
+  when: "'inherit' not in jail_ip"
+
+- name: ensure jail {{ jail_name }} is started
+  command: jail -cm {{ jail_name }}
+
+- name: ensure default packages are installed in {{ jail_name }}
+  pkgng:
+    name: "{{ default_packages }}"
+    jail: "{{ jail_name }}"
+    state: present
+
+- name: ensure extra packages are installed in {{ jail_name }}
+  pkgng:
+    name: "{{ packages }}"
+    jail: "{{ jail_name }}"
+    state: present
+
+- name: ensure services are enabled in {{ jail_name }}
+  sysrc:
+    dest: "{{ jail_mountpoint }}/etc/rc.conf"
+    name: "{{ item }}_enable"
+    value: "YES"
+  with_items: "{{ services }}"
+
+- name: ensure services are started inside {{ jail_name }}
+  service:
+    name: "{{ item }}"
+    state: started
+    args: "-j {{ jail_name }}"
+  with_items: "{{ services }}"
