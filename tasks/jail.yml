@@ -74,6 +74,13 @@
     jail: "{{ jail_name }}"
     state: present
 
+- name: ensure wheel group in sudoers without password
+  blockinfile:
+    dest: "{{ jail_mountpoint }}/usr/local/etc/sudoers.d/wheel"
+    create: yes
+    content: |
+      %wheel ALL=(ALL) NOPASSWD: ALL
+
 - name: ensure extra packages are installed in {{ jail_name }}
   pkgng:
     name: "{{ packages }}"

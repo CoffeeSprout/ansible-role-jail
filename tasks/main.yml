@@ -9,3 +9,8 @@
 - include_tasks: jail.yml
   tags:
   - jail
+
+- include_tasks: admin_users.yml
+  vars:
+    jail_user: "{{ item }}"
+  with_items: "{{ jail_admin_users }}"
